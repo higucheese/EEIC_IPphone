@@ -1,57 +1,33 @@
-#define TIME
-
-#define _BSD_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/tcp.h>
-#include <pthread.h>
-
-#include <time.h>
-#include <sys/time.h>
-
-#define SERVERMODE 2
-#define CLIENTMODE 3
-#define PORT_OFFSET 1000
-#define N 64
+#include "IPhone4blib.h"
 
 const char REC[] = "rec -t raw -b 16 -c 1 -e s -r 44100 - 2>/dev/null";
 const char PLAY[] = "play -t raw -b 16 -c 1 -e s -r 44100 - 2>/dev/null";
 
 void die(char *str){
 	perror(str);
-	exit(1);
+	pthread_exit(0);
 }
 
-typedef struct{
-	int mysocket;
-	struct sockaddr_in addr;
-} operator/*通話している両者*/;
-
-/*
+int initialize_client(operator* o, uint16_t portnum, const char* IP){
+	/*
   クライアントとしての動作をまとめたもの
   connectが終了するまで抜けない
   異常があるときは-1を返す
-*/
-int initialize_client(operator* o, uint16_t portnum, const char* IP){
+	*/
 	o->mysocket = socket(PF_INET, SOCK_STREAM, 0);
 	o->addr.sin_family = AF_INET;
-	if(inet_aton(IP, &o->addr.sin_addr) == 0) return -1;
+	if(IP == NULL || inet_aton(IP, &o->addr.sin_addr) == 0) {
+		return -1;
+	}
 	o->addr.sin_port = htons(portnum);
 	return connect(o->mysocket, (struct sockaddr*)&o->addr, sizeof(o->addr));
 }
 
-/*
+void initialize_server(operator* o, uint16_t portnum){
+	/*
   サーバーとしての動作をまとめたもの
   acceptが終了するまで抜けない
-*/
-void initialize_server(operator* o, uint16_t portnum){
+	*/
 	int servsocket = socket(PF_INET, SOCK_STREAM, 0);
 	struct sockaddr_in addr;
 	addr.sin_family = AF_INET;
@@ -64,90 +40,154 @@ void initialize_server(operator* o, uint16_t portnum){
 	close(servsocket);
 }
 
-void *transfer_thread(void *tp){
-	operator* transmitter = (operator*) tp;
+void *transfer_thread(void *ad){
+	Alldata* alldata_p = (Alldata*)ad;
 	FILE *recfp = popen(REC, "r");
 	if(recfp == NULL) die("recfp");
 	char data[N];
 	int n, flag;
 	while(1){
 		n = (int)fread(data, sizeof(char), N, recfp);
-		if(n < N) break;
-		flag = (int)send(transmitter->mysocket, data, (size_t)n, 0);
-		if(flag == -1) die("send error!");
+		if(n < N || alldata_p->hangflag == TRUE) break;
+		flag = (int)send(alldata_p->transmitter_phone.mysocket, data, (size_t)n, 0);
+		if(flag == -1) {
+			alldata_p->phoneflag = FALSE;
+			alldata_p->hangflag = TRUE;
+			die("send error!");
+		}
 	}
 	pclose(recfp);
-	close(transmitter->mysocket);
+	close(alldata_p->transmitter_phone.mysocket);
 	pthread_exit(0);
 }
 
-void *receive_thread(void *rp){
-	operator* receiver = (operator*) rp;
+void *receive_thread(void *ad){
+	Alldata* alldata_p = (Alldata*)ad;
 	FILE *playfp = popen(PLAY, "w");
 	if(playfp == NULL) die("playfp");
 	char data[N];
 	int n, flag;
-	struct timeval starttime, endtime;
 	while(1){
-		#ifdef TIME
-		gettimeofday(&starttime, NULL);
-		#endif
-		flag = (int)recv(receiver->mysocket, data, N, 0);
-		if(flag == -1) die("send error!");
+		flag = (int)recv(alldata_p->receiver_phone.mysocket, data, N, 0);
+		if(flag == -1) {
+			alldata_p->phoneflag = FALSE;
+			alldata_p->hangflag = TRUE;
+			die("send error!");
+		}
 		n = (int)fwrite(data, sizeof(char), N, playfp);
-		if(n < N) break;
-		#ifdef TIME
-		gettimeofday(&endtime, NULL);
-		time_t diffsec = difftime(endtime.tv_sec, starttime.tv_sec);
-		suseconds_t diffsub = endtime.tv_sec - starttime.tv_sec;
-		double realsec = diffsec + diffsub*1e-6;
-		if(realsec >= 0.000001)printf("receive session time:%lf\n", realsec);
-		#endif
+		if(n < N || alldata_p->hangflag == TRUE) break;
 	}
 	pclose(playfp);
-	close(receiver->mysocket);
+	close(alldata_p->receiver_phone.mysocket);
 	pthread_exit(0);
 }
 
-/*hoge.out PORT IP*/
-int main(int argc, char *argv[]){
-	if(argc != SERVERMODE && argc != CLIENTMODE) die("hoge.out PORT IP");
-
-	char *PORT = argv[1], *IP = NULL;
+void* listen_thread(void* ad){
+	Alldata* alldata_p = (Alldata*)ad;
 	uint16_t port1, port2;
-	port1 = (uint16_t)atoi(PORT);
-	port2 = (uint16_t)(atoi(PORT) + PORT_OFFSET);
-	if(port1 == 0 || port2 == 0) die("portnum");
-	operator transmitter, receiver;
-	switch(argc){
-	case SERVERMODE:
-		initialize_server(&transmitter, port1);
-		initialize_server(&receiver, port2);
-		break;
-	case CLIENTMODE:
-		IP = argv[2];
-		if(initialize_client(&receiver, port1, IP) == -1){
-			die("client recv");
-		}
-		if(initialize_client(&transmitter, port2, IP) == -1){
-			die("client trans");
-		}
-		break;
-	default:
-		die("mode select");
-		break;
+	port1 = (uint16_t)atoi(alldata_p->PortNum);
+	port2 = port1 + PORT_OFFSET;
+	initialize_server(&alldata_p->transmitter_phone, port1);
+	initialize_server(&alldata_p->receiver_phone, port2);
+	//cancelされる前に接続成功
+	if(alldata_p->mode == NORMALMODE){
+		alldata_p->mode = SERVERMODE;
+		alldata_p->phoneflag = TRUE;
 	}
-	printf("connected\n");
-	int one = 1;
-	if(setsockopt(transmitter.mysocket, SOL_TCP, TCP_NODELAY, &one, sizeof(int)) == -1
-	   || setsockopt(receiver.mysocket, SOL_TCP, TCP_NODELAY, &one, sizeof(int)) == -1)
-		die("setsockopt");
-	   
-	pthread_t trans_t, recv_t;
-	pthread_create(&trans_t, NULL, &transfer_thread, &transmitter);
-	pthread_create(&recv_t, NULL, &receive_thread, &receiver);
-	
-	pthread_join(trans_t, NULL);
-	pthread_join(recv_t, NULL);
-	return 0;
+	pthread_exit(0);
+}
+
+void* connect_thread(void* ad){
+	Alldata* alldata_p = (Alldata*)ad;
+	uint16_t port1, port2;
+	port1 = (uint16_t)atoi(alldata_p->PortNum);
+	port2 = port1 + PORT_OFFSET;
+	const char* IPaddress_temp = (const char*)alldata_p->IPaddress;
+	int count = 0;
+	while(1){
+		if(initialize_client(&alldata_p->receiver_phone, port1, IPaddress_temp) != -1) {
+			break;
+		}else{
+			if(count == 3) {
+				printf("ErrorRecv:Connection[%s]\n", IPaddress_temp);
+				alldata_p->hangflag = TRUE;
+				pthread_exit(0);
+				break;
+			}
+			count++;
+			sleep(1);
+		}
+	}
+	while(1){
+		if(initialize_client(&alldata_p->transmitter_phone, port2, IPaddress_temp) != -1) {
+			break;
+		}else{
+			if(count == 3) {
+				printf("ErrorTrans:Connection[%s]\n", IPaddress_temp);
+				alldata_p->hangflag = TRUE;
+				pthread_exit(0);
+				break;
+			}
+			count++;
+			sleep(1);
+		}
+	}
+	alldata_p->phoneflag = TRUE;
+	pthread_exit(0);
+}
+
+void* phone_thread(void* ad){
+	Alldata* alldata_p = (Alldata*)ad;
+	pthread_t listen_t, connect_t, trans_t, recv_t;
+	while(alldata_p->hangflag == FALSE){
+		alldata_p->mode = NORMALMODE;
+		alldata_p->phoneflag = FALSE;
+		alldata_p->callflag = FALSE;
+		pthread_create(&listen_t, NULL, &listen_thread, alldata_p);
+		gtk_label_set_text((GtkLabel*)alldata_p->Status, "Waiting");
+		while(alldata_p->mode == NORMALMODE){
+			if(alldata_p->callflag == TRUE){
+				alldata_p->mode = CLIENTMODE;
+			}
+			if(alldata_p->hangflag == TRUE){
+				pthread_cancel(listen_t);
+				pthread_join(listen_t, NULL);
+				pthread_exit(0);
+			}
+			sleep(1);
+		}
+		switch(alldata_p->mode){
+		case SERVERMODE:
+			break;
+		case CLIENTMODE:
+			pthread_cancel(listen_t);
+			pthread_join(listen_t, NULL);
+			pthread_create(&connect_t, NULL, &connect_thread, alldata_p);
+			gtk_label_set_text((GtkLabel*)alldata_p->Status, "Connecting");
+			while(alldata_p->phoneflag == FALSE){
+				if(alldata_p->hangflag == TRUE){
+					pthread_cancel(connect_t);
+					pthread_join(connect_t, NULL);
+					pthread_exit(0);
+				}
+			}
+			break;
+		default:
+			pthread_exit(0);
+			break;
+		}
+		
+		int one = 1;
+		if(setsockopt(alldata_p->transmitter_phone.mysocket, SOL_TCP, TCP_NODELAY, &one, sizeof(int)) == -1
+		   || setsockopt(alldata_p->receiver_phone.mysocket, SOL_TCP, TCP_NODELAY, &one, sizeof(int)) == -1)
+			die("setsockopt");
+		
+		if(pthread_create(&trans_t, NULL, &transfer_thread, alldata_p) != 0 ||
+		   pthread_create(&recv_t, NULL, &receive_thread, alldata_p) != 0) break;
+		gtk_label_set_text((GtkLabel*)alldata_p->Status, "Connected");
+		pthread_join(trans_t, NULL);
+		pthread_join(recv_t, NULL);
+	}
+	gtk_label_set_text((GtkLabel*)alldata_p->Status, "Error");
+	pthread_exit(0);
 }
