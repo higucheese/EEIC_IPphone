@@ -1,5 +1,4 @@
 *.out
-*.txt
 *.c~
 *.cmake
 Makefile
