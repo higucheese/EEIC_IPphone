@@ -1,6 +1,10 @@
 #ifndef _IPHONE4BLIB_H_
 #define _IPHONE4BLIB_H_
 
+/*chat.c*/
+void* chatsend_thread(void*);
+void* chatrecv_thread(void*);
+
 /*gui.c*/
 #include <string.h>
 #include <gtk/gtk.h>
@@ -26,6 +30,7 @@ void* gui_thread(void*);
 #define NORMALMODE 1
 #define SERVERMODE 2
 #define CLIENTMODE 3
+#define CHAT_PORT_DEFAULT 57844
 #define PORT_OFFSET 1000
 #define N 32
 
@@ -35,6 +40,7 @@ typedef struct{
 } operator/*通話している両者*/;
 
 void* phone_thread(void*);
+void die(char*);
 
 /*common*/
 #include <stdio.h>
@@ -47,6 +53,9 @@ typedef struct {
     /*gui.c*/
 	GtkWidget* Status;
     /*common*/
+	const char* Myname;
+	const char* MyIPaddress;
+	char Broadcast[32];
 	int gui_active_flag;
 	int argc;
 	char** argv;
@@ -57,8 +66,8 @@ typedef struct {
 	const gchar* IPaddress; //通話相手のIPアドレス
 	const gchar* PortNum; //通話相手のポート番号
 	GtkTextBuffer* Buffer;
-	const gchar* Name; //通話相手の名前
-	const gchar* Chat_Entry; //チャットの入力内容
+	gchar Chat_Entry[2048]; //チャットの入力内容
+	const gchar* Chat_Entry_temp; //チャットの入力内容
 	
 } Alldata;
 

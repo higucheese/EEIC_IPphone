@@ -17,6 +17,7 @@ add_executable(IPhone4B
   main.c
   gui.c
   phone.c
+  chat.c
   )
 # Link the target to the GTK+ libraries
 target_link_libraries(IPhone4B ${GTK3_LIBRARIES})

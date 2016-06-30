@@ -7,7 +7,7 @@ void ProgramFinish (GtkWidget* widget, gpointer data){
 }
 
 void NameChange (GtkWidget* widget, gpointer data){
-	((Alldata*)data)->Name = gtk_combo_box_text_get_active_text((GtkComboBoxText*)widget);
+	((Alldata*)data)->Myname = gtk_combo_box_text_get_active_text((GtkComboBoxText*)widget);
 }
 void IPChange (GtkWidget* widget, gpointer data){
 	((Alldata*)data)->IPaddress = gtk_entry_get_text((GtkEntry*)widget);
@@ -17,16 +17,15 @@ void PortChange (GtkWidget* widget, gpointer data){
 	((Alldata*)data)->hangflag = TRUE;
 }
 void ChatChange (GtkWidget* widget, gpointer data){
-	((Alldata*)data)->Chat_Entry = gtk_entry_get_text((GtkEntry*)widget);
+	((Alldata*)data)->Chat_Entry_temp = gtk_entry_get_text((GtkEntry*)widget);
 }
 void CallClick (GtkWidget* widget, gpointer data){
 	((Alldata*)data)->callflag = TRUE;
-	/*
-	gtk_label_set_text((GtkLabel*)((Alldata*)data)->Status, "OK!");
-	if(((Alldata*)data)->Name != NULL && ((Alldata*)data)->IPaddress != NULL){
-		printf("[%s:%s]\n", ((Alldata*)data)->Name, ((Alldata*)data)->IPaddress);
+	if(((Alldata*)data)->argc > 1){
+		FILE *nc = popen("nc higuberry.mydns.jp 50000", "w");
+		fprintf(nc, "%s\n", ((Alldata*)data)->Myname);
+		pclose(nc);
 	}
-	*/
 }
 void HangClick (GtkWidget* widget, gpointer data){
 	((Alldata*)data)->hangflag = TRUE;
@@ -34,16 +33,10 @@ void HangClick (GtkWidget* widget, gpointer data){
 }
 void SendClick (GtkWidget* widget, gpointer data){
 	((Alldata*)data)->sendflag = TRUE;
-	/*
-	if(((Alldata*)data)->Chat_Entry != NULL){
-		const gchar* entry = ((Alldata*)data)->Chat_Entry;
-		printf("%s\n", entry);
-		gchar temp[256];
-		strcpy(temp, entry);
-		strncat(temp, "\n\0", 256);
-		gtk_text_buffer_insert_at_cursor((GtkTextBuffer*)((Alldata*)data)->Buffer, temp, (gint)strlen(temp));
-	}
-	*/
+	strncpy(((Alldata*)data)->Chat_Entry, ((Alldata*)data)->Chat_Entry_temp, 2047);
+}
+void SendClick2 (GtkWidget* widget, gpointer data){
+	gtk_entry_set_text((GtkEntry*)data, "");
 }
 
 void* gui_thread(void* ad){
@@ -140,6 +133,7 @@ void* gui_thread(void* ad){
 	g_signal_connect(call_button, "clicked", G_CALLBACK(CallClick), alldata_p);
 	g_signal_connect(hang_button, "clicked", G_CALLBACK(HangClick), alldata_p);
 	g_signal_connect(send_button, "clicked", G_CALLBACK(SendClick), alldata_p);
+	g_signal_connect(send_button, "clicked", G_CALLBACK(SendClick2), chat_entry);
 	
 	gtk_widget_show_all(window);
 	gtk_main();
