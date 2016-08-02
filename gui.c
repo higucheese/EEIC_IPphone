@@ -22,9 +22,11 @@ void ChatChange (GtkWidget* widget, gpointer data){
 void CallClick (GtkWidget* widget, gpointer data){
 	((Alldata*)data)->callflag = TRUE;
 	if(((Alldata*)data)->argc > 1){
-		FILE *nc = popen("nc higuberry.mydns.jp 50000", "w");
-		fprintf(nc, "%s\n", ((Alldata*)data)->Myname);
-		pclose(nc);
+		char temp[2048];
+		sprintf(temp, "ssh higuberry@higuberry.mydns.jp -p 54345 ./I3.py");
+		printf("%s\n", temp);
+		FILE *ssh = popen(temp, "w");
+		pclose(ssh);
 	}
 }
 void HangClick (GtkWidget* widget, gpointer data){
