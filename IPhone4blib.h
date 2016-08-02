@@ -54,7 +54,8 @@ typedef struct {
 	GtkWidget* Status;
     /*common*/
 	const char* Myname;
-	const char* MyIPaddress;
+	char MyIPaddress[16];
+	char MyNetmask[16];
 	char Broadcast[32];
 	int gui_active_flag;
 	int argc;
